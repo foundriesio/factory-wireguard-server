@@ -7,6 +7,7 @@ connect server based on WireGuard.
 * Ubuntu 18.04 or newer
 * python3 and python3-requests
 * wireguard - the tool will explain how to install if its missing
+* Port 5555 open for UDP traffic
 
 ## Quickstart
 
