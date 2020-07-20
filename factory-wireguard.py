@@ -292,6 +292,42 @@ pubkey={pub}
         )
         sys.exit(msg)
 
+    svc = "factory-vpn-" + args.factory + ".service"
+    print("Creating systemd service", svc)
+    here = os.path.dirname(os.path.abspath(__file__))
+    with open("/etc/systemd/system/" + svc, "w") as f:
+        f.write(
+            """
+[Unit]
+Description=Factory VPN Daemon
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory={here}
+ExecStart=/usr/bin/python3 ./factory-wireguard.py -f {factory} -t {token} -k {key} daemon
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+        """.format(
+                here=here,
+                factory=args.factory,
+                token=args.apitoken,
+                key=args.privatekey,
+            )
+        )
+    try:
+        subprocess.check_call(["systemctl", "enable", svc])
+    except subprocess.CalledProcessError:
+        sys.exit(1)
+    try:
+        subprocess.check_call(["systemctl", "start", svc])
+    except subprocess.CalledProcessError:
+        sys.exit(1)
+    print("Service is running. Logs can be viewed with: journalctl -fu", svc)
+
 
 def update_dns(factory: str):
     # There's a couple of ways to infer this. This looks at the ultimates
