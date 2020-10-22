@@ -25,8 +25,8 @@ class WgPeer:
         return self.pubkey + " / " + self.ip
 
     @classmethod
-    def iter_all(cls, factory: str) -> Iterable["WgPeer"]:
-        out = subprocess.check_output(["wg", "show", "fio" + factory])
+    def iter_all(cls, intf_name: str) -> Iterable["WgPeer"]:
+        out = subprocess.check_output(["wg", "show", intf_name])
         cur = None
         for line in out.decode().splitlines():
             if line.startswith("peer:"):
@@ -197,15 +197,15 @@ AllowedIPs = {ip}
         self._gen_conf(factory, buf)
         return buf.getvalue()
 
-    def apply_conf(self, factory: str, conf: str):
-        with open("/etc/wireguard/fio%s.conf" % factory, "w") as f:
+    def apply_conf(self, factory: str, conf: str, intf_name: str):
+        with open("/etc/wireguard/%s.conf" % intf_name, "w") as f:
             os.fchmod(f.fileno(), 0o700)
             f.write(conf)
         try:
-            subprocess.check_call(["wg-quick", "down", "fio" + factory])
+            subprocess.check_call(["wg-quick", "down", intf_name])
         except subprocess.CalledProcessError:
             log.info("Unable to take VPN down. Assuming initial invocation")
-        subprocess.check_call(["wg-quick", "up", "fio" + factory])
+        subprocess.check_call(["wg-quick", "up", intf_name])
 
     @staticmethod
     def probe_external_ip():
@@ -306,7 +306,7 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory={here}
-ExecStart=/usr/bin/python3 ./factory-wireguard.py -f {factory} -t {token} -k {key} daemon
+ExecStart=/usr/bin/python3 ./factory-wireguard.py -n {intf} -f {factory} -t {token} -k {key} daemon
 Restart=always
 
 [Install]
@@ -316,6 +316,7 @@ WantedBy=multi-user.target
                 factory=args.factory,
                 token=args.apitoken,
                 key=args.privatekey,
+                intf=args.intf_name,
             )
         )
     try:
@@ -329,14 +330,14 @@ WantedBy=multi-user.target
     print("Service is running. Logs can be viewed with: journalctl -fu", svc)
 
 
-def update_dns(factory: str):
+def update_dns(factory: str, intf_name: str):
     # There's a couple of ways to infer this. This looks at the ultimates
     # source of truth - the wireguard status. The status only shows things
     # by the device's public key. So we then look at the
     # FactoryDevice.ip_cache to figure out the device name
     hosts_by_pub = {v[0]: k for k, v in FactoryDevice.ip_cache.items()}
     hosts = ""
-    for peer in WgPeer.iter_all(factory):
+    for peer in WgPeer.iter_all(intf_name):
         host = hosts_by_pub[peer.pubkey]
         hosts += peer.ip + "\t" + host + "\n"
 
@@ -379,9 +380,9 @@ def daemon(args):
         if cur_conf != conf:
             if cur_conf != "":
                 log.info("Configuration changed, applying changes")
-            wgserver.apply_conf(args.factory, conf)
+            wgserver.apply_conf(args.factory, conf, args.intf_name)
             cur_conf = conf
-            update_dns(args.factory)
+            update_dns(args.factory, args.intf_name)
         time.sleep(args.interval)
 
 
@@ -408,6 +409,9 @@ def _get_args():
     )
     parser.add_argument(
         "--factory", "-f", required=True, help="Foundries Factory to work with"
+    )
+    parser.add_argument(
+        "--intf-name", "-n", help="Name of wireguard interface to create. Default is fio<factory>"
     )
     parser.add_argument(
         "--privatekey",
@@ -446,7 +450,12 @@ def _get_args():
         help="How often to sync device settings. default=%(default)d seconds",
     )
 
-    return parser.parse_args()
+    args = parser.parse_args()
+    if len(args.factory) > 12 and not args.intf_name:
+        sys.exit("ERROR: --intf-name argument is required when factory name >12 characters")
+    elif not args.intf_name:
+        args.intf_name = "fio" + args.factory
+    return args
 
 
 if __name__ == "__main__":
