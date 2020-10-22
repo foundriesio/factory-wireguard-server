@@ -411,7 +411,9 @@ def _get_args():
         "--factory", "-f", required=True, help="Foundries Factory to work with"
     )
     parser.add_argument(
-        "--intf-name", "-n", help="Name of wireguard interface to create. Default is fio<factory>"
+        "--intf-name",
+        "-n",
+        help="Name of wireguard interface to create. Default is fio<factory>",
     )
     parser.add_argument(
         "--privatekey",
@@ -452,7 +454,9 @@ def _get_args():
 
     args = parser.parse_args()
     if len(args.factory) > 12 and not args.intf_name:
-        sys.exit("ERROR: --intf-name argument is required when factory name >12 characters")
+        sys.exit(
+            "ERROR: --intf-name argument is required when factory name >12 characters"
+        )
     elif not args.intf_name:
         args.intf_name = "fio" + args.factory
     return args
