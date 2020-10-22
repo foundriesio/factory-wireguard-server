@@ -1,7 +1,9 @@
 #!/usr/bin/python3
+import fcntl
 import logging
 import os
 import socket
+import struct
 import subprocess
 import sys
 import time
@@ -246,6 +248,24 @@ AllowedIPs = {ip}
         sys.exit(1)
 
 
+def _assert_ip(ip: str):
+    """Make sure this IP isn't already in use"""
+
+    def ip_addr(interface: str) -> str:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        return socket.inet_ntoa(
+            fcntl.ioctl(
+                s.fileno(),
+                0x8915,  # SIOCGIFADDR
+                struct.pack("256s", interface[:15].encode("UTF-8")),
+            )[20:24]
+        )
+
+    for _, interface in socket.if_nameindex():
+        if ip_addr(interface) == ip:
+            sys.exit("ERROR: IP Address %s is already in use" % ip)
+
+
 def enable_for_factory(args):
     if not args.endpoint:
         args.endpoint = WgServer.probe_external_ip()
@@ -262,6 +282,7 @@ def enable_for_factory(args):
             "ERROR: A UDP socket is already opened on %s:%d"
             % (args.endpoint, args.port)
         )
+    _assert_ip(args.vpnaddr)
 
     try:
         with open(args.privatekey, mode="rb") as f:
