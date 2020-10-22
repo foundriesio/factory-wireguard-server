@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 import logging
 import os
+import socket
 import subprocess
 import sys
 import time
@@ -251,6 +252,16 @@ def enable_for_factory(args):
 
     print("External Endpoint: %s:%d" % (args.endpoint, args.port))
     print("VPN Address:", args.vpnaddr)
+
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.bind((args.endpoint, args.port))
+        s.close()
+    except OSError:
+        sys.exit(
+            "ERROR: A UDP socket is already opened on %s:%d"
+            % (args.endpoint, args.port)
+        )
 
     try:
         with open(args.privatekey, mode="rb") as f:
