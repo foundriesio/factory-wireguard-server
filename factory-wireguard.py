@@ -7,6 +7,7 @@ import struct
 import subprocess
 import sys
 import time
+import re
 
 from argparse import ArgumentParser
 from io import StringIO
@@ -200,7 +201,9 @@ AllowedIPs = {ip}
         self._gen_conf(factory, buf)
         return buf.getvalue()
 
-    def apply_conf(self, factory: str, conf: str, intf_name: str):
+    def apply_conf(self, factory: str, conf: str, intf_name: str, no_sysctl: bool):
+        if no_sysctl:
+            conf = re.sub(".*sysctl.*\n?","", conf)
         with open("/etc/wireguard/%s.conf" % intf_name, "w") as f:
             os.fchmod(f.fileno(), 0o700)
             f.write(conf)
@@ -417,7 +420,7 @@ def daemon(args):
         if cur_conf != conf:
             if cur_conf != "":
                 log.info("Configuration changed, applying changes")
-            wgserver.apply_conf(args.factory, conf, args.intf_name)
+            wgserver.apply_conf(args.factory, conf, args.intf_name, args.no_sysctl)
             cur_conf = conf
             update_dns(args.factory, args.intf_name)
         time.sleep(args.interval)
@@ -457,6 +460,11 @@ def _get_args():
         "-k",
         required=True,
         help="Path to private key. Generate with: wg genkey",
+    )
+    parser.add_argument(
+        "--no-sysctl",
+        action='store_true',
+        help="Don't perform sysctl as PostUp/Down"
     )
     sub = parser.add_subparsers(help="sub-command help")
 
