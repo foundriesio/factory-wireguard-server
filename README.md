@@ -47,3 +47,21 @@ The best way to understand what each side of the VPN is doing is by running:
 
 This says what's trying to connect, what it thinks its public key is, and how
 much data has transferred between each connection.
+
+Some servers could be behind router or firewall before reaching the internet.
+If you know the port is available on the external router and you get the error:
+~~~
+ ERROR: A UDP socket is already opened on <external ip>:<external port>
+~~~
+
+Then you can do this configure step:
+~~~
+ $ ./factory-wireguard.py \
+   --apitoken <api token> \  # https://app.foundries.io/settings/tokens
+   --factory <factory> \
+   --privatekey /root/wgpriv.key \ # where to store generated private key
+   --no-check-ip \
+   enable
+~~~
+
+Which will allow the endpoint to be used without a verification check.
