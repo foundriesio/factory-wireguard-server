@@ -277,15 +277,16 @@ def enable_for_factory(args):
     print("External Endpoint: %s:%d" % (args.endpoint, args.port))
     print("VPN Address:", args.vpnaddr)
 
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.bind((args.endpoint, args.port))
-        s.close()
-    except OSError:
-        sys.exit(
-            "ERROR: A UDP socket is already opened on %s:%d"
-            % (args.endpoint, args.port)
-        )
+    if not args.no_check_ip:
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.bind((args.endpoint, args.port))
+            s.close()
+        except OSError:
+            sys.exit(
+                "ERROR: A UDP socket is already opened on %s:%d"
+                % (args.endpoint, args.port)
+            )
     _assert_ip(args.vpnaddr)
 
     try:
@@ -474,6 +475,11 @@ def _get_args():
         "-v",
         default="10.42.42.1",
         help="VPN address for this server. Default=%(default)s",
+    )
+    p.add_argument(
+        "--no-check-ip",
+        action='store_true',
+        help="Don't check external IP"
     )
 
     p = sub.add_parser(
