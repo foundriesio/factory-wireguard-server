@@ -260,10 +260,14 @@ def _assert_ip(ip: str):
                 struct.pack("256s", interface[:15].encode("UTF-8")),
             )[20:24]
         )
+        s.close()
 
     for _, interface in socket.if_nameindex():
-        if ip_addr(interface) == ip:
-            sys.exit("ERROR: IP Address %s is already in use" % ip)
+        try:
+            if ip_addr(interface) == ip:
+                sys.exit("ERROR: IP Address %s is already in use" % ip)
+        except OSError:
+            pass
 
 
 def enable_for_factory(args):
