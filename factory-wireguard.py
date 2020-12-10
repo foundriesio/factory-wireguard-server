@@ -7,7 +7,6 @@ import struct
 import subprocess
 import sys
 import time
-import re
 
 from argparse import ArgumentParser
 from io import StringIO
@@ -164,7 +163,7 @@ class WgServer:
         self.port = port
         self.addr = addr
 
-    def _gen_conf(self, factory: str, f: TextIO):
+    def _gen_conf(self, factory: str, f: TextIO, no_sysctl: bool):
         intf = """
 [Interface]
 Address = {addr}
@@ -174,13 +173,20 @@ SaveConfig = false
 
 PostUp = iptables -t nat -A POSTROUTING -o {intf} -j MASQUERADE
 PostUp = iptables -A FORWARD -i %i -j ACCEPT
-PostUp = sysctl -q -w net.ipv4.ip_forward=1
+        """.format(
+            key=self.privkey, addr=self.addr, port=self.port, intf="TODO"
+        )
+        f.write(intf.strip())
+        f.write("\n")
+        if not no_sysctl:
+            f.write("PostUp = sysctl -q -w net.ipv4.ip_forward=1\n\n")
+            f.write("PostDown = sysctl -q -w net.ipv4.ip_forward=0\n")
 
-PostDown = sysctl -q -w net.ipv4.ip_forward=0
+        intf = """
 PostDown = iptables -D FORWARD -i %i -j ACCEPT
 PostDown = iptables -t nat -D POSTROUTING -o {intf} -j MASQUERADE
         """.format(
-            key=self.privkey, addr=self.addr, port=self.port, intf="TODO"
+            intf="TODO"
         )
         f.write(intf.strip())
         f.write("\n")
@@ -196,14 +202,12 @@ AllowedIPs = {ip}
             f.write(peer.strip())
             f.write("\n")
 
-    def gen_conf(self, factory: str) -> str:
+    def gen_conf(self, factory: str, no_sysctl: bool) -> str:
         buf = StringIO()
-        self._gen_conf(factory, buf)
+        self._gen_conf(factory, buf, no_sysctl)
         return buf.getvalue()
 
-    def apply_conf(self, factory: str, conf: str, intf_name: str, no_sysctl: bool):
-        if no_sysctl:
-            conf = re.sub(".*sysctl.*\n?","", conf)
+    def apply_conf(self, factory: str, conf: str, intf_name: str):
         with open("/etc/wireguard/%s.conf" % intf_name, "w") as f:
             os.fchmod(f.fileno(), 0o700)
             f.write(conf)
@@ -416,11 +420,11 @@ def daemon(args):
     cur_conf = ""
     while True:
         log.info("Looking for factory config changes")
-        conf = wgserver.gen_conf(args.factory)
+        conf = wgserver.gen_conf(args.factory, args.no_sysctl)
         if cur_conf != conf:
             if cur_conf != "":
                 log.info("Configuration changed, applying changes")
-            wgserver.apply_conf(args.factory, conf, args.intf_name, args.no_sysctl)
+            wgserver.apply_conf(args.factory, conf, args.intf_name)
             cur_conf = conf
             update_dns(args.factory, args.intf_name)
         time.sleep(args.interval)
