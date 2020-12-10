@@ -277,7 +277,7 @@ def _assert_ip(ip: str):
             pass
 
 
-def enable_for_factory(args):
+def configure_factory(args):
     if not args.endpoint:
         args.endpoint = WgServer.probe_external_ip()
 
@@ -336,6 +336,8 @@ pubkey={pub}
         )
         sys.exit(msg)
 
+def enable_for_factory(args):
+    configure_factory(args)
     svc = "factory-vpn-" + args.factory + ".service"
     print("Creating systemd service", svc)
     here = os.path.dirname(os.path.abspath(__file__))
@@ -430,6 +432,11 @@ def daemon(args):
         time.sleep(args.interval)
 
 
+def enable_run(args):
+    configure_factory(args)
+    daemon(args)
+
+
 def _assert_installed():
     if os.path.exists("/usr/bin/wg-quick"):
         return
@@ -504,6 +511,36 @@ def _get_args():
         type=int,
         default=300,
         help="How often to sync device settings. default=%(default)d seconds",
+    )
+    p = sub.add_parser(
+        "enable_run", help="Enable configure and run wireguard server in sync with Factory devices"
+    )
+    p.set_defaults(func=enable_run)
+    p.add_argument(
+        "--interval",
+        "-i",
+        type=int,
+        default=300,
+        help="How often to sync device settings. default=%(default)d seconds",
+    )
+    p.add_argument(
+        "--port",
+        "-p",
+        type=int,
+        default=5555,
+        help="External port for clients to connect to. Default=%(default)d",
+    )
+    p.add_argument("--endpoint", "-e", help="External IP devices will connect to")
+    p.add_argument(
+        "--vpnaddr",
+        "-v",
+        default="10.42.42.1",
+        help="VPN address for this server. Default=%(default)s",
+    )
+    p.add_argument(
+        "--no-check-ip",
+        action='store_true',
+        help="Don't check external IP"
     )
 
     args = parser.parse_args()
