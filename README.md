@@ -65,3 +65,20 @@ Then you can do this configure step:
 ~~~
 
 Which will allow the endpoint to be used without a verification check.
+
+## Advanced configuration
+
+A docker-compose.yml is included that can be used to make the server a container.
+
+To build the container:
+~~~
+ $ docker-compose build
+~~~
+
+The Server requires FACTORY and APITOKEN environment variables to be set and can
+be done in a .env file all other variables are optional as listed in the compose file.
+
+To invoke the server:
+~~~
+ $ docker-compose up -d
+~~~
