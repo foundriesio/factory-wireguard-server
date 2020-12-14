@@ -1,0 +1,33 @@
+version: "3"
+
+services:
+  server:
+    container_name: factory-wireguard-server
+    image: factory-wireguard-server
+    build: .
+    restart: unless-stopped
+    ports:
+      - 5555:${PORT-5555}/udp
+    cap_add:
+      - NET_ADMIN
+    environment:
+      # Optional (shown with defaults)
+      # - PORT=5555
+      # - VPNADDR=10.42.42.1
+      # - INTERVAL=300
+      # - INTERF="fio${FACTORY}"
+      # unset ENDPOINT
+      # unset NOCHECKIP
+      # unset NOUSESYSCTL
+      - PORT
+      - VPNADDR
+      - INTERVAL
+      - INTERF
+      - ENDPOINT
+      - NOCHECKIP=--no-check-ip
+      - NOUSESYSCTL=--no-sysctl
+      #
+      # Manditory variables
+      #
+      - APITOKEN=${APITOKEN?}
+      - FACTORY=${FACTORY?}

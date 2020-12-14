@@ -68,38 +68,17 @@ Which will allow the endpoint to be used without a verification check.
 
 ## Advanced configuration
 
-A Dockerfile is included that can be used to make the server a container.
+A docker-compose.yml is included that can be used to make the server a container.
 
 To build the container:
 ~~~
- $ docker build -t factory-wireguard-server:latest .
+ $ docker-compose build
 ~~~
+
+The Server requires FACTORY and APITOKEN environment variables to be set and can
+be done in a .env file all other variables are optional as listed in the compose file.
 
 To invoke the server:
 ~~~
- $ docker run -d --restart unless-stopped --cap-add=NET_ADMIN -p 5555:5555/udp --env-file=env_file --name factory-wireguard-server factory-wireguard-server
-~~~
-
-Where a file env_file (not supplied) is used to set the environment variables.
-The file content should look like:
-~~~
-#
-# Manditory variables
-#
-APITOKEN=<your api token>
-FACTORY=<your factory name>
-
-#
-# Optional (shown with defaults)
-#
-# PORT=5555
-# VPNADDR=10.42.42.1
-# INTERVAL=300
-# INTERF="fio${FACTORY}"
-# unset ENDPOINT
-#ENDPOINT=192.168.1.142
-# unset NOCHECKIP
-NOCHECKIP=--no-check-ip
-# unset NOUSESYSCTL
-NOUSESYSCTL=--no-sysctl
+ $ docker-compose up -d
 ~~~
