@@ -29,5 +29,5 @@ services:
       #
       # Manditory variables
       #
-      - APITOKEN=${APITOKEN?}
-      - FACTORY=${FACTORY?}
+      - APITOKEN=${APITOKEN}
+      - FACTORY=${FACTORY}
