@@ -1,4 +1,4 @@
-FROM alpine:latest
+FROM alpine:3.12
 
 RUN apk update && apk upgrade
 RUN apk add iptables python3 py3-requests wireguard-tools wireguard-virt openssh-client
