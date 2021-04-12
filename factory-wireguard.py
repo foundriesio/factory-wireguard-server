@@ -148,7 +148,7 @@ class FactoryDevice:
                 if cfg:
                     yield cls(d["name"], cfg[0], cfg[1])
 
-            next_url = d.get("next")
+            next_url = data.get("next")
             if not next_url:
                 break
             data = api.get(next_url)
