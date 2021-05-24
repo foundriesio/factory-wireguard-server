@@ -336,6 +336,7 @@ pubkey={pub}
         )
         sys.exit(msg)
 
+
 def enable_for_factory(args):
     configure_factory(args)
     svc = "factory-vpn-" + args.factory + ".service"
@@ -473,9 +474,7 @@ def _get_args():
         help="Path to private key. Generate with: wg genkey",
     )
     parser.add_argument(
-        "--no-sysctl",
-        action='store_true',
-        help="Don't perform sysctl as PostUp/Down"
+        "--no-sysctl", action="store_true", help="Don't perform sysctl as PostUp/Down"
     )
     sub = parser.add_subparsers(help="sub-command help")
 
@@ -495,11 +494,7 @@ def _get_args():
         default="10.42.42.1",
         help="VPN address for this server. Default=%(default)s",
     )
-    p.add_argument(
-        "--no-check-ip",
-        action='store_true',
-        help="Don't check external IP"
-    )
+    p.add_argument("--no-check-ip", action="store_true", help="Don't check external IP")
 
     p = sub.add_parser(
         "daemon", help="Keep wireguard server in sync with Factory devices"
@@ -513,7 +508,8 @@ def _get_args():
         help="How often to sync device settings. default=%(default)d seconds",
     )
     p = sub.add_parser(
-        "enable_run", help="Enable configure and run wireguard server in sync with Factory devices"
+        "enable_run",
+        help="Enable configure and run wireguard server in sync with Factory devices",
     )
     p.set_defaults(func=enable_run)
     p.add_argument(
@@ -537,11 +533,7 @@ def _get_args():
         default="10.42.42.1",
         help="VPN address for this server. Default=%(default)s",
     )
-    p.add_argument(
-        "--no-check-ip",
-        action='store_true',
-        help="Don't check external IP"
-    )
+    p.add_argument("--no-check-ip", action="store_true", help="Don't check external IP")
 
     args = parser.parse_args()
     if len(args.factory) > 12 and not args.intf_name:
