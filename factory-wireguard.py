@@ -86,16 +86,6 @@ class FactoryApi:
                     return f["value"]
         sys.exit("Server configuration not defined in this factory")
 
-    def device_config(self, device: str) -> Optional[dict]:
-        try:
-            return self.get("/ota/devices/" + device + "/config/")["config"]
-        except requests.HTTPError as e:
-            if e.response.status_code == 404:
-                log.info("Device(%s) has no configuration", device)
-            else:
-                raise e
-        return None
-
 
 DeviceCfg = Tuple[str, str]
 
@@ -112,46 +102,15 @@ class FactoryDevice:
         return self.name + " - " + self.ip
 
     @classmethod
-    def wireguard_cfg(cls, device: str, api: FactoryApi) -> Optional[DeviceCfg]:
-        cfg = cls.ip_cache.get(device)
-        if cfg:
-            return cfg
-        url = "https://api.foundries.io/ota/devices/"
-        url += device + "/config/"
-        cfg_history = api.device_config(device)
-        if cfg_history and len(cfg_history):
-            for f in cfg_history[0]["files"]:
-                if f["name"] == "wireguard-client":
-                    pub = ip = None
-                    enabled = True
-                    for line in f["value"].splitlines():
-                        if line.startswith("address"):
-                            _, ip = line.split("=", 1)
-                        elif line.startswith("pubkey"):
-                            _, pub = line.split("=", 1)
-                        elif line.startswith("enabled"):
-                            enabled = line != "enabled=0"
-
-                    if pub and ip and enabled:
-                        cls.ip_cache[device] = pub, ip
-                        return pub, ip
-        return None
-
-    @classmethod
     def iter_vpn_enabled(
         cls, factory: str, api: FactoryApi
     ) -> Iterable["FactoryDevice"]:
-        data = api.get("/ota/devices/?factory=" + factory)
-        while True:
-            for d in data["devices"]:
-                cfg = cls.wireguard_cfg(d["name"], api)
-                if cfg:
-                    yield cls(d["name"], cfg[0], cfg[1])
-
-            next_url = data.get("next")
-            if not next_url:
-                break
-            data = api.get(next_url)
+        items = api.get("/ota/factories/" + factory + "/wireguard-ips/")
+        cls.ip_cache = {}
+        for item in items:
+            if item.get("enabled"):
+                cls.ip_cache[item["name"]] = item["pubkey"], item["ip"]
+                yield cls(item["name"], item["pubkey"], item["ip"])
 
 
 # TODO - stop using wg-quick and use low-level "wg" command instead. It allows
