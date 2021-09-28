@@ -60,8 +60,8 @@ Then you can do this configure step:
    --apitoken <api token> \  # https://app.foundries.io/settings/tokens
    --factory <factory> \
    --privatekey /root/wgpriv.key \ # where to store generated private key
-   --no-check-ip \
-   enable
+   enable \
+   --no-check-ip
 ~~~
 
 Which will allow the endpoint to be used without a verification check.
