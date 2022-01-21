@@ -501,6 +501,10 @@ def _get_args():
         )
     elif not args.intf_name:
         args.intf_name = "fio" + args.factory
+    if len(args.intf_name) > 15:
+        sys.exit(
+            "ERROR: --intf-name argument is too long. Max length is 15 characters."
+        )
     return args
 
 
