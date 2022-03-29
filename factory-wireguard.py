@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 import fcntl
+import json
 import logging
 import os
 import socket
@@ -11,12 +12,15 @@ import time
 from argparse import ArgumentParser
 from io import StringIO
 from typing import Dict, Iterable, Optional, TextIO, Tuple
+from urllib.parse import urlencode
 
 import requests
 
 logging.basicConfig(level="INFO", format="%(asctime)s %(levelname)s: %(message)s")
 log = logging.getLogger()
 logging.getLogger("requests").setLevel(logging.WARNING)
+
+OAUTH_CLIENT_ID = "fioid_B68H03zaynCXzycBX9M3WKL7xLqJYJyf"
 
 
 class WgPeer:
@@ -71,7 +75,66 @@ class FactoryApi:
         self._urlbase = urlbase
 
     def _get_oauth_headers(self, factory: str, credsfile: str) -> str:
-        raise NotImplementedError
+        try:
+            with open(credsfile) as f:
+                data = json.load(f)
+            raise NotImplementedError
+        except FileNotFoundError:
+            return self._register_oauth(factory, credsfile)
+
+    def _register_oauth(self, factory: str, credsfile: str) -> dict:
+        data = {
+            "client_id": OAUTH_CLIENT_ID,
+            "response_type": "code",
+            "redirect_uri": "urn:ietf:wg:oauth:2.0:oob",
+            "scope": f"{factory}:devices:read-update {factory}:devices:read",
+        }
+
+        print("Visit this link to authorize this application:")
+        url = "https://app.foundries.io/authorize?" + urlencode(data)
+        print("  ", url)
+
+        sys.stdout.write("Enter code: ")
+        sys.stdout.flush()
+        try:
+            code = sys.stdin.readline().strip()
+        except KeyboardInterrupt:
+            sys.stdout.write("\n")
+            sys.exit(0)
+
+        # Get two tokens.
+        # Token 1 - short-lived token with devices:read-update to update factory
+        # Token 2 - long-level token with devices:read
+        data = {
+            "grant_type": "authorization_code",
+            "code": code,
+            "client_id": OAUTH_CLIENT_ID,
+            "redirect_uri": "urn:ietf:wg:oauth:2.0:oob",
+            "scope": factory + ":devices:read-update",
+            "expires": 90,
+        }
+
+        r = requests.post("https://app.foundries.io/oauth/token", data=data)
+        if not r.ok:
+            sys.exit("ERROR: %s: HTTP_:%d: %s" % (r.url, r.status_code, r.text))
+
+        update_token = r.json()["access_token"]
+
+        del data["expires"]
+        data["scope"] = factory + ":devices:read"
+        r = requests.post("https://app.foundries.io/oauth/token", data=data)
+        if not r.ok:
+            sys.exit("ERROR: %s: HTTP_:%d: %s" % (r.url, r.status_code, r.text))
+
+        creds = {
+            "access_token": r.json()["access_token"],
+            "refresh_token": r.json()["refresh_token"],
+            "expires_in": r.json()["expires_in"],
+            "created": time.time(),
+        }
+        with open(credsfile, "w") as f:
+            json.dump(creds, f, indent=2)
+        return {"Authorization": "Bearer " + update_token}
 
     def get(self, resource: str) -> dict:
         if resource.startswith("http"):
