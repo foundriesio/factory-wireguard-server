@@ -78,7 +78,11 @@ class FactoryApi:
         try:
             with open(credsfile) as f:
                 data = json.load(f)
-            raise NotImplementedError
+
+            now = time.time()
+            if now > data["created"] + data["expires_in"] - 600:  # 600 for some slack
+                raise NotImplemented()
+            return {"Authorization": "Bearer " + data["access_token"]}
         except FileNotFoundError:
             return self._register_oauth(factory, credsfile)
 
