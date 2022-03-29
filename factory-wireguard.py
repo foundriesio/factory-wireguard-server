@@ -55,16 +55,30 @@ class WgPeer:
 
 
 class FactoryApi:
-    def __init__(self, apitoken: str, urlbase: str = "https://api.foundries.io"):
-        self._headers = {"OSF-TOKEN": apitoken}
+    def __init__(
+        self,
+        factory: str,
+        apitoken: Optional[str] = None,
+        oauthcreds: Optional[str] = None,
+        urlbase: str = "https://api.foundries.io",
+    ):
+        if apitoken:
+            self._get_headers = lambda: {"OSF-TOKEN": apitoken}
+        elif oauthcreds:
+            self._get_headers = lambda: self._get_oauth_headers(factory, oauthcreds)
+        else:
+            raise ValueError("apitoken or oauthcreds required")
         self._urlbase = urlbase
+
+    def _get_oauth_headers(self, factory: str, credsfile: str) -> str:
+        raise NotImplementedError
 
     def get(self, resource: str) -> dict:
         if resource.startswith("http"):
             url = resource
         else:
             url = self._urlbase + resource
-        r = requests.get(url, headers=self._headers)
+        r = requests.get(url, headers=self._get_headers())
         r.raise_for_status()
         return r.json()
 
@@ -73,7 +87,7 @@ class FactoryApi:
             url = resource
         else:
             url = self._urlbase + resource
-        r = requests.patch(url, headers=self._headers, json=data)
+        r = requests.patch(url, headers=self._get_headers(), json=data)
         r.raise_for_status()
         return r.json()
 
@@ -301,6 +315,12 @@ def enable_for_factory(args):
     svc = "factory-vpn-" + args.factory + ".service"
     print("Creating systemd service", svc)
     here = os.path.dirname(os.path.abspath(__file__))
+
+    if args.apitoken:
+        authparam = "-t " + args.apitoken
+    else:
+        authparam = "-a " + args.oauthcreds
+
     with open("/etc/systemd/system/" + svc, "w") as f:
         f.write(
             """
@@ -312,7 +332,7 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory={here}
-ExecStart=/usr/bin/python3 ./factory-wireguard.py -n {intf} -f {factory} -t {token} -k {key} daemon
+ExecStart=/usr/bin/python3 ./factory-wireguard.py -n {intf} -f {factory} {authparam} -k {key} daemon
 Restart=always
 
 [Install]
@@ -320,7 +340,7 @@ WantedBy=multi-user.target
         """.format(
                 here=here,
                 factory=args.factory,
-                token=args.apitoken,
+                authparam=authparam,
                 key=args.privatekey,
                 intf=args.intf_name,
             )
@@ -415,8 +435,12 @@ def _assert_installed():
 
 def _get_args():
     parser = ArgumentParser(description="Manage a Wireguard VPN for Factory devices")
-    parser.add_argument(
-        "--apitoken", "-t", required=True, help="API token to access api.foundries.io"
+    auth_group = parser.add_mutually_exclusive_group(required=True)
+    auth_group.add_argument(
+        "--apitoken", "-t", help="API token to access api.foundries.io"
+    )
+    auth_group.add_argument(
+        "--oauthcreds", "-a", help="OAuth2 credentials file for api.foundries.io"
     )
     parser.add_argument(
         "--factory", "-f", required=True, help="Foundries Factory to work with"
@@ -512,5 +536,8 @@ if __name__ == "__main__":
     args = _get_args()
     _assert_installed()
     if getattr(args, "func", None):
-        args.api = FactoryApi(args.apitoken)
+        if args.apitoken:
+            args.api = FactoryApi(args.factory, apitoken=args.apitoken)
+        else:
+            args.api = FactoryApi(args.factory, oauthcreds=args.oauthcreds)
         args.func(args)
