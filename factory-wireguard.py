@@ -78,13 +78,31 @@ class FactoryApi:
         try:
             with open(credsfile) as f:
                 data = json.load(f)
-
             now = time.time()
             if now > data["created"] + data["expires_in"] - 600:  # 600 for some slack
-                raise NotImplemented()
+                data = self._refresh_oauth(factory, data["refresh_token"], credsfile)
             return {"Authorization": "Bearer " + data["access_token"]}
         except FileNotFoundError:
             return self._register_oauth(factory, credsfile)
+
+    def _refresh_oauth(self, factory: str, refresh_tok: str, credsfile: str) -> dict:
+        log.info("Refreshing access token")
+        refresh_data = {
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_tok,
+        }
+        r = requests.post("https://app.foundries.io/oauth/token", data=refresh_data)
+        if not r.ok:
+            sys.exit("ERROR: %s: HTTP_:%d: %s" % (r.url, r.status_code, r.text))
+        data = {
+            "refresh_token": r.json()["refresh_token"],
+            "access_token": r.json()["access_token"],
+            "expires_in": r.json()["expires_in"],
+            "created": time.time(),
+        }
+        with open(credsfile, "w") as f:
+            json.dump(data, f, indent=2)
+        return data
 
     def _register_oauth(self, factory: str, credsfile: str) -> dict:
         data = {
