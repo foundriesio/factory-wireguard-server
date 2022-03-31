@@ -336,6 +336,11 @@ def _assert_ip(ip: str):
 
 
 def configure_factory(args):
+    if os.path.exists(args.oauthcreds):
+        sys.exit(
+            "ERROR: Credentials file %s already exists. You must remove this file to continue"
+            % args.oauthcreds
+        )
     if not args.endpoint:
         args.endpoint = WgServer.probe_external_ip()
 
