@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 import fcntl
+import json
 import logging
 import os
 import socket
@@ -11,12 +12,15 @@ import time
 from argparse import ArgumentParser
 from io import StringIO
 from typing import Dict, Iterable, Optional, TextIO, Tuple
+from urllib.parse import urlencode
 
 import requests
 
 logging.basicConfig(level="INFO", format="%(asctime)s %(levelname)s: %(message)s")
 log = logging.getLogger()
 logging.getLogger("requests").setLevel(logging.WARNING)
+
+OAUTH_CLIENT_ID = "fioid_B68H03zaynCXzycBX9M3WKL7xLqJYJyf"
 
 
 class WgPeer:
@@ -55,16 +59,111 @@ class WgPeer:
 
 
 class FactoryApi:
-    def __init__(self, apitoken: str, urlbase: str = "https://api.foundries.io"):
-        self._headers = {"OSF-TOKEN": apitoken}
+    def __init__(
+        self,
+        factory: str,
+        apitoken: Optional[str] = None,
+        oauthcreds: Optional[str] = None,
+        urlbase: str = "https://api.foundries.io",
+    ):
+        if apitoken:
+            self._get_headers = lambda: {"OSF-TOKEN": apitoken}
+        elif oauthcreds:
+            self._get_headers = lambda: self._get_oauth_headers(factory, oauthcreds)
+        else:
+            raise ValueError("apitoken or oauthcreds required")
         self._urlbase = urlbase
+
+    def _get_oauth_headers(self, factory: str, credsfile: str) -> str:
+        try:
+            with open(credsfile) as f:
+                data = json.load(f)
+            now = time.time()
+            if now > data["created"] + data["expires_in"] - 600:  # 600 for some slack
+                data = self._refresh_oauth(factory, data["refresh_token"], credsfile)
+            return {"Authorization": "Bearer " + data["access_token"]}
+        except FileNotFoundError:
+            return self._register_oauth(factory, credsfile)
+
+    def _refresh_oauth(self, factory: str, refresh_tok: str, credsfile: str) -> dict:
+        log.info("Refreshing access token")
+        refresh_data = {
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_tok,
+        }
+        r = requests.post("https://app.foundries.io/oauth/token", data=refresh_data)
+        if not r.ok:
+            sys.exit("ERROR: %s: HTTP_:%d: %s" % (r.url, r.status_code, r.text))
+        data = {
+            "refresh_token": r.json()["refresh_token"],
+            "access_token": r.json()["access_token"],
+            "expires_in": r.json()["expires_in"],
+            "created": time.time(),
+        }
+        with open(credsfile, "w") as f:
+            json.dump(data, f, indent=2)
+        return data
+
+    def _register_oauth(self, factory: str, credsfile: str) -> dict:
+        data = {
+            "client_id": OAUTH_CLIENT_ID,
+            "response_type": "code",
+            "redirect_uri": "urn:ietf:wg:oauth:2.0:oob",
+            "scope": f"{factory}:devices:read-update {factory}:devices:read",
+        }
+
+        print("Visit this link to authorize this application:")
+        url = "https://app.foundries.io/authorize?" + urlencode(data)
+        print("  ", url)
+
+        sys.stdout.write("Enter code: ")
+        sys.stdout.flush()
+        try:
+            code = sys.stdin.readline().strip()
+        except KeyboardInterrupt:
+            sys.stdout.write("\n")
+            sys.exit(0)
+
+        # Get two tokens.
+        # Token 1 - short-lived token with devices:read-update to update factory
+        # Token 2 - long-level token with devices:read
+        data = {
+            "grant_type": "authorization_code",
+            "code": code,
+            "client_id": OAUTH_CLIENT_ID,
+            "redirect_uri": "urn:ietf:wg:oauth:2.0:oob",
+            "scope": factory + ":devices:read-update",
+            "expires": 90,
+        }
+
+        r = requests.post("https://app.foundries.io/oauth/token", data=data)
+        if not r.ok:
+            sys.exit("ERROR: %s: HTTP_:%d: %s" % (r.url, r.status_code, r.text))
+
+        update_token = r.json()["access_token"]
+
+        del data["expires"]
+        data["scope"] = factory + ":devices:read"
+        r = requests.post("https://app.foundries.io/oauth/token", data=data)
+        if not r.ok:
+            sys.exit("ERROR: %s: HTTP_:%d: %s" % (r.url, r.status_code, r.text))
+
+        creds = {
+            "access_token": r.json()["access_token"],
+            "refresh_token": r.json()["refresh_token"],
+            "expires_in": r.json()["expires_in"],
+            "created": time.time(),
+        }
+        with open(credsfile, "w") as f:
+            json.dump(creds, f, indent=2)
+        return {"Authorization": "Bearer " + update_token}
 
     def get(self, resource: str) -> dict:
         if resource.startswith("http"):
             url = resource
         else:
             url = self._urlbase + resource
-        r = requests.get(url, headers=self._headers)
+        r = requests.get(url, headers=self._get_headers())
         r.raise_for_status()
         return r.json()
 
@@ -73,7 +172,7 @@ class FactoryApi:
             url = resource
         else:
             url = self._urlbase + resource
-        r = requests.patch(url, headers=self._headers, json=data)
+        r = requests.patch(url, headers=self._get_headers(), json=data)
         r.raise_for_status()
         return r.json()
 
@@ -237,6 +336,11 @@ def _assert_ip(ip: str):
 
 
 def configure_factory(args):
+    if os.path.exists(args.oauthcreds):
+        sys.exit(
+            "ERROR: Credentials file %s already exists. You must remove this file to continue"
+            % args.oauthcreds
+        )
     if not args.endpoint:
         args.endpoint = WgServer.probe_external_ip()
 
@@ -301,6 +405,12 @@ def enable_for_factory(args):
     svc = "factory-vpn-" + args.factory + ".service"
     print("Creating systemd service", svc)
     here = os.path.dirname(os.path.abspath(__file__))
+
+    if args.apitoken:
+        authparam = "-t " + args.apitoken
+    else:
+        authparam = "-a " + args.oauthcreds
+
     with open("/etc/systemd/system/" + svc, "w") as f:
         f.write(
             """
@@ -312,7 +422,7 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory={here}
-ExecStart=/usr/bin/python3 ./factory-wireguard.py -n {intf} -f {factory} -t {token} -k {key} daemon
+ExecStart=/usr/bin/python3 ./factory-wireguard.py -n {intf} -f {factory} {authparam} -k {key} daemon
 Restart=always
 
 [Install]
@@ -320,7 +430,7 @@ WantedBy=multi-user.target
         """.format(
                 here=here,
                 factory=args.factory,
-                token=args.apitoken,
+                authparam=authparam,
                 key=args.privatekey,
                 intf=args.intf_name,
             )
@@ -415,8 +525,12 @@ def _assert_installed():
 
 def _get_args():
     parser = ArgumentParser(description="Manage a Wireguard VPN for Factory devices")
-    parser.add_argument(
-        "--apitoken", "-t", required=True, help="API token to access api.foundries.io"
+    auth_group = parser.add_mutually_exclusive_group(required=True)
+    auth_group.add_argument(
+        "--apitoken", "-t", help="API token to access api.foundries.io"
+    )
+    auth_group.add_argument(
+        "--oauthcreds", "-a", help="OAuth2 credentials file for api.foundries.io"
     )
     parser.add_argument(
         "--factory", "-f", required=True, help="Foundries Factory to work with"
@@ -512,5 +626,8 @@ if __name__ == "__main__":
     args = _get_args()
     _assert_installed()
     if getattr(args, "func", None):
-        args.api = FactoryApi(args.apitoken)
+        if args.apitoken:
+            args.api = FactoryApi(args.factory, apitoken=args.apitoken)
+        else:
+            args.api = FactoryApi(args.factory, oauthcreds=args.oauthcreds)
         args.func(args)
