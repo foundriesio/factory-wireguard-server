@@ -215,11 +215,12 @@ class FactoryDevice:
 # TODO - stop using wg-quick and use low-level "wg" command instead. It allows
 #        us to use "wg syncconf" so that changes don't bring things down/up
 class WgServer:
-    def __init__(self, privkey: str, addr: str, port: int, api: "FactoryApi"):
+    def __init__(self, privkey: str, endpoint, addr: str, port: int, api: "FactoryApi"):
         self.privkey = privkey
         self.api = api
         self.port = port
         self.addr = addr
+        self.endpoint = endpoint
 
     def _gen_conf(self, factory: str, f: TextIO, no_sysctl: bool):
         intf = """
@@ -295,7 +296,7 @@ AllowedIPs = {ip}
     @classmethod
     def load_from_factory(cls, api: FactoryApi, factory: str, pkey: str) -> "WgServer":
         buf = api.wgserver_config(factory)
-        addr = port = None
+        endpoint = addr = port = None
         for line in buf.splitlines():
             k, v = line.split("=", 1)
             k = k.strip()
@@ -303,13 +304,13 @@ AllowedIPs = {ip}
                 log.error("Server config is not enabled in this factory")
                 sys.exit(1)
             elif k == "endpoint":
-                _, v = v.split(":")
+                endpoint, v = v.split(":")
                 port = int(v)
             elif k == "server_address":
                 addr = v.strip()
-        if addr and port:
-            return cls(pkey, addr, port, api)
-        log.error("Invalid server configuratio in factory: " + buf)
+        if addr and port and endpoint:
+            return cls(pkey, endpoint, addr, port, api)
+        log.error("Invalid server configuration in factory: " + buf)
         sys.exit(1)
 
 
