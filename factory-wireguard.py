@@ -215,11 +215,12 @@ class FactoryDevice:
 # TODO - stop using wg-quick and use low-level "wg" command instead. It allows
 #        us to use "wg syncconf" so that changes don't bring things down/up
 class WgServer:
-    def __init__(self, privkey: str, addr: str, port: int, api: "FactoryApi"):
+    def __init__(self, privkey: str, endpoint, addr: str, port: int, api: "FactoryApi"):
         self.privkey = privkey
         self.api = api
         self.port = port
         self.addr = addr
+        self.endpoint = endpoint
 
     def _gen_conf(self, factory: str, f: TextIO, no_sysctl: bool):
         intf = """
@@ -295,7 +296,7 @@ AllowedIPs = {ip}
     @classmethod
     def load_from_factory(cls, api: FactoryApi, factory: str, pkey: str) -> "WgServer":
         buf = api.wgserver_config(factory)
-        addr = port = None
+        endpoint = addr = port = None
         for line in buf.splitlines():
             k, v = line.split("=", 1)
             k = k.strip()
@@ -303,14 +304,45 @@ AllowedIPs = {ip}
                 log.error("Server config is not enabled in this factory")
                 sys.exit(1)
             elif k == "endpoint":
-                _, v = v.split(":")
+                endpoint, v = v.split(":")
                 port = int(v)
             elif k == "server_address":
                 addr = v.strip()
-        if addr and port:
-            return cls(pkey, addr, port, api)
-        log.error("Invalid server configuratio in factory: " + buf)
+        if addr and port and endpoint:
+            return cls(pkey, endpoint, addr, port, api)
+        log.error("Invalid server configuration in factory: " + buf)
         sys.exit(1)
+
+    def patch_config(self, factory: str):
+        pub = self.derive_pubkey(self.privkey.encode()).decode()
+        cfgfile = """
+    endpoint={endpoint}:{port}
+    server_address={addr}
+    pubkey={pub}
+        """.format(
+            endpoint=self.endpoint, addr=self.addr, pub=pub, port=self.port
+        )
+        data = {
+            "reason": "Enable Wireguard for factory",
+            "files": [
+                {
+                    "name": "wireguard-server",
+                    "unencrypted": True,
+                    "value": cfgfile.strip(),
+                    "on-changed": ["/usr/share/fioconfig/handlers/factory-config-vpn"],
+                },
+            ],
+        }
+
+        try:
+            print("Registering with foundries.io...")
+            self.api.patch("/ota/factories/%s/config/" % args.factory, data)
+        except requests.HTTPError as e:
+            msg = "ERROR: Unable to configure factory: HTTP_%d\n%s" % (
+                e.response.status_code,
+                e.response.text,
+            )
+            sys.exit(msg)
 
 
 def _assert_ip(ip: str):
@@ -371,34 +403,9 @@ def configure_factory(args):
         with open(args.privatekey, mode="wb") as f:
             f.write(priv)
 
-    cfgfile = """
-endpoint={endpoint}:{port}
-server_address={server_address}
-pubkey={pub}
-    """.format(
-        endpoint=args.endpoint, server_address=args.vpnaddr, pub=pub, port=args.port
-    )
-    data = {
-        "reason": "Enable Wireguard for factory",
-        "files": [
-            {
-                "name": "wireguard-server",
-                "unencrypted": True,
-                "value": cfgfile.strip(),
-                "on-changed": ["/usr/share/fioconfig/handlers/factory-config-vpn"],
-            },
-        ],
-    }
-
-    try:
-        print("Registring with foundries.io...")
-        args.api.patch("/ota/factories/%s/config/" % args.factory, data)
-    except requests.HTTPError as e:
-        msg = "ERROR: Unable to configure factory: HTTP_%d\n%s" % (
-            e.response.status_code,
-            e.response.text,
-        )
-        sys.exit(msg)
+    wgserver = WgServer(priv, args.endpoint, args.vpnaddr, args.port, api)
+    print("Registring with foundries.io...")
+    wgserver.patch_config(args.factory)
 
 
 def enable_for_factory(args):
@@ -508,6 +515,21 @@ def enable_run(args):
     daemon(args)
 
 
+def update_endpoint(args):
+    with open(args.privatekey) as f:
+        pkey = f.read().strip()
+    wgserver = WgServer.load_from_factory(args.api, args.factory, pkey)
+
+    if not args.endpoint:
+        args.endpoint = WgServer.probe_external_ip()
+    wgserver.addr = args.endpoint
+    if args.port:
+        wgserver.port = args.port
+
+    print("Updating external endpoint to: %s:%d" % (wgserver.addr, wgserver.port))
+    wgserver.patch_config(args.factory)
+
+
 def _assert_installed():
     if os.path.exists("/usr/bin/wg-quick"):
         return
@@ -608,6 +630,13 @@ def _get_args():
         help="VPN address for this server. Default=%(default)s",
     )
     p.add_argument("--no-check-ip", action="store_true", help="Don't check external IP")
+
+    p = sub.add_parser("update_endpoint", help="Update VPN server endpoint")
+    p.set_defaults(func=update_endpoint)
+    p.add_argument(
+        "--port", "-p", type=int, help="External port for clients to connect to.",
+    )
+    p.add_argument("--endpoint", "-e", help="External IP devices will connect to")
 
     args = parser.parse_args()
     if len(args.factory) > 12 and not args.intf_name:
