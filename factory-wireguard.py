@@ -515,6 +515,21 @@ def enable_run(args):
     daemon(args)
 
 
+def update_endpoint(args):
+    with open(args.privatekey) as f:
+        pkey = f.read().strip()
+    wgserver = WgServer.load_from_factory(args.api, args.factory, pkey)
+
+    if not args.endpoint:
+        args.endpoint = WgServer.probe_external_ip()
+    wgserver.addr = args.endpoint
+    if args.port:
+        wgserver.port = args.port
+
+    print("Updating external endpoint to: %s:%d" % (wgserver.addr, wgserver.port))
+    wgserver.patch_config(args.factory)
+
+
 def _assert_installed():
     if os.path.exists("/usr/bin/wg-quick"):
         return
@@ -615,6 +630,13 @@ def _get_args():
         help="VPN address for this server. Default=%(default)s",
     )
     p.add_argument("--no-check-ip", action="store_true", help="Don't check external IP")
+
+    p = sub.add_parser("update_endpoint", help="Update VPN server endpoint")
+    p.set_defaults(func=update_endpoint)
+    p.add_argument(
+        "--port", "-p", type=int, help="External port for clients to connect to.",
+    )
+    p.add_argument("--endpoint", "-e", help="External IP devices will connect to")
 
     args = parser.parse_args()
     if len(args.factory) > 12 and not args.intf_name:
