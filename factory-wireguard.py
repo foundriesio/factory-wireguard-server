@@ -403,7 +403,7 @@ def configure_factory(args):
         with open(args.privatekey, mode="wb") as f:
             f.write(priv)
 
-    wgserver = WgServer(priv, args.endpoint, args.vpnaddr, args.port, api)
+    wgserver = WgServer(priv, args.endpoint, args.vpnaddr, args.port, args.api)
     print("Registring with foundries.io...")
     wgserver.patch_config(args.factory)
 
