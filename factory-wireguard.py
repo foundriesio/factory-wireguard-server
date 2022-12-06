@@ -313,6 +313,37 @@ AllowedIPs = {ip}
         log.error("Invalid server configuration in factory: " + buf)
         sys.exit(1)
 
+    def patch_config(self, factory: str):
+        pub = self.derive_pubkey(self.privkey.encode()).decode()
+        cfgfile = """
+    endpoint={endpoint}:{port}
+    server_address={addr}
+    pubkey={pub}
+        """.format(
+            endpoint=self.endpoint, addr=self.addr, pub=pub, port=self.port
+        )
+        data = {
+            "reason": "Enable Wireguard for factory",
+            "files": [
+                {
+                    "name": "wireguard-server",
+                    "unencrypted": True,
+                    "value": cfgfile.strip(),
+                    "on-changed": ["/usr/share/fioconfig/handlers/factory-config-vpn"],
+                },
+            ],
+        }
+
+        try:
+            print("Registring with foundries.io...")
+            self.api.patch("/ota/factories/%s/config/" % args.factory, data)
+        except requests.HTTPError as e:
+            msg = "ERROR: Unable to configure factory: HTTP_%d\n%s" % (
+                e.response.status_code,
+                e.response.text,
+            )
+            sys.exit(msg)
+
 
 def _assert_ip(ip: str):
     """Make sure this IP isn't already in use"""
@@ -372,34 +403,9 @@ def configure_factory(args):
         with open(args.privatekey, mode="wb") as f:
             f.write(priv)
 
-    cfgfile = """
-endpoint={endpoint}:{port}
-server_address={server_address}
-pubkey={pub}
-    """.format(
-        endpoint=args.endpoint, server_address=args.vpnaddr, pub=pub, port=args.port
-    )
-    data = {
-        "reason": "Enable Wireguard for factory",
-        "files": [
-            {
-                "name": "wireguard-server",
-                "unencrypted": True,
-                "value": cfgfile.strip(),
-                "on-changed": ["/usr/share/fioconfig/handlers/factory-config-vpn"],
-            },
-        ],
-    }
-
-    try:
-        print("Registring with foundries.io...")
-        args.api.patch("/ota/factories/%s/config/" % args.factory, data)
-    except requests.HTTPError as e:
-        msg = "ERROR: Unable to configure factory: HTTP_%d\n%s" % (
-            e.response.status_code,
-            e.response.text,
-        )
-        sys.exit(msg)
+    wgserver = WgServer(priv, args.endpoint, args.vpnaddr, args.port, api)
+    print("Registring with foundries.io...")
+    wgserver.patch_config(args.factory)
 
 
 def enable_for_factory(args):
