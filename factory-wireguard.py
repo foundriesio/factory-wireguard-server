@@ -335,7 +335,7 @@ AllowedIPs = {ip}
         }
 
         try:
-            print("Registring with foundries.io...")
+            print("Registering with foundries.io...")
             self.api.patch("/ota/factories/%s/config/" % args.factory, data)
         except requests.HTTPError as e:
             msg = "ERROR: Unable to configure factory: HTTP_%d\n%s" % (
