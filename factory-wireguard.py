@@ -526,6 +526,11 @@ def update_endpoint(args):
     if args.port:
         wgserver.port = args.port
 
+    # The oauth token has devices:read scope. We need read-update to make the
+    # change, we'll create a temp token for this by re-using the oauth logic:
+    token = args.api._register_oauth(args.factory, "/dev/null")
+    args.api._get_headers = lambda: token
+
     print("Updating external endpoint to: %s:%d" % (wgserver.addr, wgserver.port))
     wgserver.patch_config(args.factory)
 
